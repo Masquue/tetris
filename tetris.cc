@@ -84,7 +84,7 @@ private:
         std::size_t shape_index;  // index into shapes_
         std::vector<block> shape;
         block location;
-        int color;          // [1, 7)
+        int color;          // [1, 7]
         const tetris* t;
 
         block_it begin() const { return shape.cbegin(); }
