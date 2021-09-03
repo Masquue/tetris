@@ -8,6 +8,18 @@
 #include <ncurses.h>
 #include <unistd.h>
 
+namespace {
+    // n is the length of text to be put at center
+    int move_start_of_center(int y, int n) {
+        return move(y, (COLS - n) / 2);
+    }
+
+    int mvaddstr_center(int y, const char* str) {
+        move_start_of_center(y, std::strlen(str));
+        return printw(str);
+    }
+}
+
 struct gameover : std::exception { };
 
 class tetris {
@@ -57,7 +69,7 @@ private:
             // different from normal coordinates
             // y axis point to below
             // also using (y, x) coordinates
-            // so reverse revsese = same
+            // so reverse revsese = original
             static const int cw[2][2] = { { 0, 1}, {-1, 0} },
                             ccw[2][2] = { { 0,-1}, { 1, 0} };
             // default clockwise
@@ -277,16 +289,6 @@ private:
         move(height_ + 1, 1);
         printw("score: %i", score_);
         refresh();
-    }
-
-    // n is the length of text to be put at center
-    int move_start_of_center(int y, int n) {
-        return move(y, (COLS - n) / 2);
-    }
-
-    int mvaddstr_center(int y, const char* str) {
-        move_start_of_center(y, std::strlen(str));
-        return printw(str);
     }
     
     void loop() {
