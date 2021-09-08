@@ -119,13 +119,27 @@ private:
         }
     };
 
+    // see https://tetris.wiki/Tetris_(NES,_Nintendo)
+    int random_shape() {
+        static std::default_random_engine e(std::random_device{}());
+
+        std::uniform_int_distribution<> shape_d1(0, n_shapes_);
+        int ret = shape_d1(e);
+        if (ret == static_cast<int>(n_shapes_) || ret == prev_shape_) {
+            std::uniform_int_distribution<> shape_d2(0, n_shapes_ - 1);
+            ret = shape_d2(e);
+        }
+        prev_shape_ = ret;
+        return ret;
+    }
+
     // false: cannot place new piece, i.e. gameover
     void new_piece() {
         static std::default_random_engine e(std::random_device{}());
 
         std::uniform_int_distribution<> shape_d(0, n_shapes_ - 1),
                                         color_d(1, 7);
-        curr_piece_.shape = shape_d(e);
+        curr_piece_.shape = random_shape();
         curr_piece_.color = color_d(e);
         auto n_rot = shapes_[curr_piece_.shape].size();
         std::uniform_int_distribution<> rot_d(0, n_rot - 1);
@@ -363,7 +377,9 @@ private:
     const std::size_t n_shapes_ = shapes_.size();
 
     int tick_cnt_ = 0;
+    int prev_shape_ = -1;
     std::size_t score_ = 0;
+
     const int invisible_lines_ = 2;
     const int height_, width_,
               board_height_;
