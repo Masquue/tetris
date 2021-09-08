@@ -27,7 +27,8 @@ public:
     tetris(int height = 20, int width = 10) 
         : height_(height),
           width_(width),
-          board_(height_, std::vector<int>(width_, 0))
+          board_height_(height_ + invisible_lines_),
+          board_(board_height_, std::vector<int>(width_, 0))
     {
         initscr();
         noecho();
@@ -132,14 +133,14 @@ private:
         curr_piece_.t = this;
 
         auto ext = curr_piece_.get_extent();
-        // we want the extent of rand_x in [0, width), rand_y+ext.y_min at 0 line
+        // we want the extent of rand_x in [0, width), y+ext.y_min at first visible line
         // 0 <= rand_x + ext.x_min, rand_x + ext.x_max < width
         int x_min = -ext.x_min, x_max = width_ - ext.x_max - 1,
-            y = -ext.y_min;
-        if (x_min > x_max || y + ext.y_max >= height_)
+            y = invisible_lines_ - ext.y_min;
+        if (x_min > x_max || y + ext.y_max >= board_height_)
             throw std::runtime_error("space too small");
         std::uniform_int_distribution<> x_d(x_min, x_max);
-        curr_piece_.location = { -ext.y_min, x_d(e) };
+        curr_piece_.location = { y, x_d(e) };
 
         for (const auto& block : curr_piece_) {
             if (board_cell(curr_piece_.location + block) != 0)
@@ -229,8 +230,8 @@ private:
         
         score_ += lines_to_remove.size();
 
-        std::vector<bool> moved(height_, false);
-        for (int y = *lines_to_remove.crbegin(); y >= 1; --y) {
+        std::vector<bool> moved(board_height_, false);
+        for (int y = *lines_to_remove.crbegin(); y >= invisible_lines_ + 1; --y) {
             int from = y - 1;
             while (from >= 0 &&
                    (lines_to_remove.count(from) == 1 || moved[from]))
@@ -242,12 +243,12 @@ private:
             } else
                 clear_line(y);
         }
-        clear_line(0);
+        clear_line(invisible_lines_);
     }
 
     bool check_boundary(const block& b, int y = 0, int x = 0) const {
         int yy = b.y + y, xx = b.x + x;
-        return 0 <= yy && yy < height_ &&
+        return 0 <= yy && yy < board_height_ &&
                0 <= xx && xx < width_;
     }
 
@@ -272,8 +273,8 @@ private:
     }
 
     void frame() {
-        for (int y = 0; y < height_; ++y) {
-            move(y + 1, 1);
+        for (int y = invisible_lines_; y < board_height_; ++y) {
+            move(y - invisible_lines_ + 1, 1);
             for (int x = 0; x < width_; ++x) {
                 attron(COLOR_PAIR(board_[y][x]));
                 printw("  ");
@@ -363,7 +364,9 @@ private:
 
     int tick_cnt_ = 0;
     std::size_t score_ = 0;
-    const int height_, width_;
+    const int invisible_lines_ = 2;
+    const int height_, width_,
+              board_height_;
     std::vector<std::vector<int>> board_;
     piece curr_piece_;
 };
