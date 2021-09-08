@@ -64,24 +64,6 @@ private:
         block operator+(const block& b) const {
             return { y + b.y, x + b.x };
         }
-
-        void rotate(int cnt) {
-            // different from normal coordinates
-            // y axis point to below
-            // also using (y, x) coordinates
-            // so reverse revsese = original
-            static const int cw[2][2] = { { 0, 1}, {-1, 0} },
-                            ccw[2][2] = { { 0,-1}, { 1, 0} };
-            // default clockwise
-            static const int (&rot)[2][2] = cw;
-            cnt %= 4;
-            while (cnt--) {
-                int new_y = y * rot[0][0] + x * rot[0][1];
-                int new_x = y * rot[1][0] + x * rot[1][1];
-                y = new_y;
-                x = new_x;
-            }
-        }
     };
 
     struct extent {
@@ -93,22 +75,38 @@ private:
     using block_it = std::vector<block>::const_iterator;
 
     struct piece {
-        std::size_t shape_index;  // index into shapes_
-        std::vector<block> shape;
+        std::size_t shape;  // index into shapes_
         block location;
+        int rotation;
         int color;          // [1, 7]
         const tetris* t;
 
-        block_it begin() const { return shape.cbegin(); }
-        block_it   end() const { return shape.cend(); }
+        block_it begin() const { return get_shape().cbegin(); }
+        block_it   end() const { return get_shape().cend(); }
 
-        void rotate(int cnt) {
-            for (auto& block : shape)
-                block.rotate(cnt);
+        void rotate(bool ccw) {
+            rotation = get_rotated(ccw);
+        }
+
+        int get_rotated(bool ccw) const {
+            int rot = rotation;
+            ccw ? --rot : ++rot;
+            int n_rot = t->shapes_[shape].size();   // avoid mixing signed and unsigned
+            rot = (rot + n_rot) % n_rot;
+            return rot;
+        }
+
+        const shape_t& get_shape() const {
+            return t->shapes_[shape][rotation];
+        }
+
+        const shape_t& get_rotated_shape(bool ccw) const {
+            return t->shapes_[shape][get_rotated(ccw)];
         }
 
         extent get_extent() const {
             // assuming at least one block in a shape
+            auto& shape = get_shape();
             extent e{ shape[0].y, shape[0].y, shape[0].x, shape[0].x };
             for (std::size_t i = 1; i < shape.size(); ++i) {
                 e.y_min = std::min(e.y_min, shape[i].y);
@@ -123,16 +121,15 @@ private:
     // false: cannot place new piece, i.e. gameover
     void new_piece() {
         static std::default_random_engine e(std::random_device{}());
-        std::uniform_int_distribution<> shape_d(0, n_shapes_ - 1),
-                                        rot_d(0, 3),
-                                        color_d(1, 7);
-        curr_piece_.shape_index = shape_d(e);
-        curr_piece_.shape = shapes_[curr_piece_.shape_index];
-        curr_piece_.color = color_d(e);
-        curr_piece_.t = this;
 
-        int rot = rot_d(e);
-        curr_piece_.rotate(rot);
+        std::uniform_int_distribution<> shape_d(0, n_shapes_ - 1),
+                                        color_d(1, 7);
+        curr_piece_.shape = shape_d(e);
+        curr_piece_.color = color_d(e);
+        auto n_rot = shapes_[curr_piece_.shape].size();
+        std::uniform_int_distribution<> rot_d(0, n_rot - 1);
+        curr_piece_.rotation = rot_d(e);
+        curr_piece_.t = this;
 
         auto ext = curr_piece_.get_extent();
         // we want the extent of rand_x in [0, width), rand_y+ext.y_min at 0 line
@@ -140,11 +137,11 @@ private:
         int x_min = -ext.x_min, x_max = width_ - ext.x_max - 1,
             y = -ext.y_min;
         if (x_min > x_max || y + ext.y_max >= height_)
-            throw std::runtime_error("space to small");
+            throw std::runtime_error("space too small");
         std::uniform_int_distribution<> x_d(x_min, x_max);
         curr_piece_.location = { -ext.y_min, x_d(e) };
 
-        for (const auto& block : curr_piece_.shape) {
+        for (const auto& block : curr_piece_) {
             if (board_cell(curr_piece_.location + block) != 0)
                 throw gameover();
         }
@@ -180,15 +177,13 @@ private:
         return true;
     }
 
-    bool can_rotate(int cnt) {
+    bool can_rotate(bool ccw) {
         update_piece(0);
         // clear current piece before doing check
         bool rotatable = true;
         const auto& loc = curr_piece_.location;
-        for (const auto& block : curr_piece_) {
-            auto rotated = block;
-            rotated.rotate(cnt);
-            auto block_loc = loc + rotated;
+        for (const auto& block : curr_piece_.get_rotated_shape(ccw)) {
+            auto block_loc = loc + block;
             if (!check_boundary(block_loc) ||
                     board_cell(block_loc) != 0){
                 rotatable = false;
@@ -200,20 +195,20 @@ private:
     }
 
     // todo: some rotation should be fixed
-    bool rotate_piece(int cnt = 1) {
-        if (!can_rotate(cnt))
+    bool rotate_piece(bool ccw = false) {
+        if (!can_rotate(ccw))
             return false;
         update_piece(0);
-        curr_piece_.rotate(cnt);
+        curr_piece_.rotate(ccw);
         update_piece(curr_piece_.color);
         return true;
     }
 
     // update curr piece, do not check boundaries
-    void update_piece(int color, int y = 0, int x = 0) {
+    void update_piece(int color) {
         const auto& loc = curr_piece_.location;
         for (const auto& block : curr_piece_) {
-            board_cell(loc + block, y, x) = color;
+            board_cell(loc + block) = color;
         }
     }
 
@@ -328,14 +323,42 @@ private:
     const double move_intervals_ = 0.5;  // interval between moves (unit second) (second per move)
     const int move_ticks_ = std::floor(tick_times_ * move_intervals_); // ticks per move
 
-    const std::vector<shape_t> shapes_ = {
-        {{ 0, -1}, { 0,  0}, { 0,  1}, { 0,  2}},
-        {{ 0,  0}, { 0,  1}, { 1,  0}, { 1,  1}},
-        {{-1,  0}, { 0,  0}, { 0,  1}, { 1,  1}},
-        {{-1,  0}, { 0,  0}, { 0, -1}, { 1, -1}},
-        {{ 1, -1}, { 0, -1}, { 0,  0}, { 0,  1}},
-        {{ 1,  1}, { 0,  1}, { 0,  0}, { 0, -1}},
-        {{ 0,  0}, {-1,  0}, { 0, -1}, { 0,  1}},
+    // use right-handed Nintendo Rotation System
+    // see https://tetris.wiki/Nintendo_Rotation_System
+    const std::vector<std::vector<shape_t>> shapes_ = {
+        {   // I piece
+            {{ 0, -2}, { 0, -1}, { 0,  0}, { 0,  1}},
+            {{-2,  0}, {-1,  0}, { 0,  0}, { 1,  0}},
+        },
+        {   // O piece
+            {{ 0,  0}, { 0,  1}, { 1,  0}, { 1,  1}},
+        },
+        {   // J piece
+            {{ 1,  1}, { 0,  1}, { 0,  0}, { 0, -1}},
+            {{ 1, -1}, { 1,  0}, { 0,  0}, {-1,  0}},
+            {{-1, -1}, { 0, -1}, { 0,  0}, { 0,  1}},
+            {{-1,  1}, {-1,  0}, { 0,  0}, { 1,  0}},
+        },
+        {   // L piece
+            {{ 1, -1}, { 0, -1}, { 0,  0}, { 0,  1}},
+            {{-1, -1}, {-1,  0}, { 0,  0}, { 1,  0}},
+            {{-1,  1}, { 0,  1}, { 0,  0}, { 0, -1}},
+            {{ 1,  1}, { 1,  0}, { 0,  0}, {-1,  0}},
+        },
+        {   // S piece
+            {{-1,  0}, { 0,  0}, { 0,  1}, { 1,  1}},
+            {{ 0,  1}, { 0,  0}, { 1,  0}, { 1, -1}},
+        },
+        {   // Z piece
+            {{-1,  1}, { 0,  1}, { 0,  0}, { 1,  0}},
+            {{ 1,  1}, { 1,  0}, { 0,  0}, { 0, -1}},
+        },
+        {   // T piece
+            {{ 0,  0}, {-1,  0}, { 0, -1}, { 0,  1}},
+            {{ 0,  0}, {-1,  0}, { 1,  0}, { 0,  1}},
+            {{ 0,  0}, { 0, -1}, { 1,  0}, { 0,  1}},
+            {{ 0,  0}, { 0, -1}, { 1,  0}, {-1,  0}},
+        },
     };
     const std::size_t n_shapes_ = shapes_.size();
 
