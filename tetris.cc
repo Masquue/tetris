@@ -194,7 +194,6 @@ private:
         return rotatable;
     }
 
-    // todo: some rotation should be fixed
     bool rotate_piece(bool ccw = false) {
         if (!can_rotate(ccw))
             return false;
