@@ -316,9 +316,7 @@ private:
                     else if (c == 's') {
                         while (move_piece())
                             ;
-                        try_remove_line();
-                        tick_cnt_ = 0;  // reset tick
-                        new_piece();    // pop up next piece immediately
+                        tick_cnt_ = 0;
                     }
                     if (c == 'q')
                         break;
